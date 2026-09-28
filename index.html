@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Ativo · Endereço incorreto</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📞</text></svg>" />
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+<main>
+  <header class="top">
+    <div>
+      <span class="eyebrow">Operação · Ativo</span>
+      <h1>Endereço incorreto <span class="accent">por motorista</span></h1>
+    </div>
+    <button class="btn ghost danger" id="btnReset" hidden>Limpar tudo</button>
+  </header>
+
+  <section class="card" id="step1">
+    <h2><span class="n">1</span> Importar planilha</h2>
+    <p class="mut">Exportação do JMS (xlsx ou csv). O arquivo é lido só neste computador, nada é enviado para a internet.</p>
+    <input type="file" id="file" accept=".xlsx,.xls,.csv" />
+    <div id="fileInfo" class="mut"></div>
+  </section>
+
+  <section id="painel" hidden>
+    <div class="stats" id="stats"></div>
+
+    <section class="card">
+      <h2>Ranking de ofensores</h2>
+      <table id="rank"></table>
+    </section>
+
+    <section class="card">
+      <h2><span class="n">2</span> Buscar telefones no JMS</h2>
+      <ol class="steps">
+        <li><b>Uma vez por computador:</b> arraste este botão para a barra de favoritos do Chrome →
+          <a id="bookmarklet" class="bm" href="#">📞 Ativo JMS</a>
+          <span class="mut">(se a barra estiver oculta: Ctrl+Shift+B)</span></li>
+        <li><button class="btn" id="btnCopiar">Copiar códigos pendentes (<span id="qtdPend">0</span>)</button></li>
+        <li>No JMS, abra <b>Operação → Rastreamento do pacote</b> e clique no favorito <b>Ativo JMS</b>. Cole os códigos e clique <b>Iniciar</b>.</li>
+        <li>Ao terminar, clique <b>Copiar resultado</b> e cole aqui:
+          <textarea id="colar" placeholder="Cole aqui o resultado copiado do JMS"></textarea>
+          <button class="btn" id="btnImportar">Importar resultado</button>
+          <span id="importInfo" class="mut"></span></li>
+      </ol>
+    </section>
+
+    <section class="card">
+      <h2><span class="n">3</span> Mensagem padrão</h2>
+      <p class="mut">Variáveis: <code>{primeiro_nome}</code> <code>{codigo}</code> <code>{endereco}</code> <code>{bairro}</code> <code>{cidade}</code></p>
+      <textarea id="modelo" rows="4"></textarea>
+    </section>
+
+    <section class="card">
+      <div class="bar">
+        <h2><span class="n">4</span> Lista por motorista</h2>
+        <div class="actions">
+          <input id="q" placeholder="Filtrar: código, cliente, telefone, motorista…" />
+          <select id="fStatus">
+            <option value="">Todos</option>
+            <option value="ok">Com telefone</option>
+            <option value="sem">Sem telefone / erro</option>
+            <option value="pend">Não consultados</option>
+            <option value="aviso">Verificar telefone</option>
+            <option value="feito">Já enviados</option>
+          </select>
+          <button class="btn" id="btnExcel">Exportar Excel</button>
+        </div>
+      </div>
+      <div id="lista"></div>
+    </section>
+  </section>
+</main>
+<div id="toast" class="toast"></div>
+<script src="vendor/xlsx.full.min.js"></script>
+<script src="bookmarklet.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
