@@ -16,7 +16,7 @@ const MODELO_PADRAO =
   "Pode nos enviar o endereço correto, com rua, número e ponto de referência? " +
   "Assim reagendamos a entrega. Obrigado!";
 
-const novoEstado = () => ({ pacotes: [], totais: {}, res: {}, feitos: {}, modelo: MODELO_PADRAO, arquivo: "", atual: null });
+const novoEstado = () => ({ pacotes: [], totais: {}, res: {}, feitos: {}, desmarcados: {}, modelo: MODELO_PADRAO, arquivo: "", atual: null });
 let estado = novoEstado();
 let aba = "resumo";
 let busca = { rodando: false, parar: false, feitos: 0, total: 0, erro: "" };
@@ -105,7 +105,7 @@ async function lerArquivo(file) {
   }
   const codigos = new Set(pacotes.map((p) => p.codigo));
   const manter = (o) => Object.fromEntries(Object.entries(o).filter(([k]) => codigos.has(k)));
-  estado = { ...estado, pacotes, totais, res: manter(estado.res), feitos: manter(estado.feitos), arquivo: file.name, atual: null };
+  estado = { ...estado, pacotes, totais, res: manter(estado.res), feitos: manter(estado.feitos), arquivo: file.name, atual: null, desmarcados: {} };
   salvar();
 }
 
@@ -155,7 +155,9 @@ function contexto() {
   const pos = Object.fromEntries(rank.map((r) => [r.motorista, r.pos]));
   const fila = linhas.filter((l) => l.status === "ok" && !estado.feitos[l.codigo]).sort((a, b) => pos[a.motorista] - pos[b.motorista]);
   const paraBuscar = linhas.filter((l) => l.status === "pend" || l.status === "erro");
-  return { linhas, rank, pos, fila, paraBuscar,
+  const buscaveis = paraBuscar.filter((l) => !estado.desmarcados[l.motorista]); // só os motoristas marcados
+  const marcados = rank.filter((r) => !estado.desmarcados[r.motorista]).length;
+  return { linhas, rank, pos, fila, paraBuscar, buscaveis, marcados,
     ok: linhas.filter((l) => l.status === "ok"), sem: linhas.filter((l) => l.status === "sem") };
 }
 
@@ -183,7 +185,9 @@ function telaResumo(c) {
       <p>3. Você atende um cliente por vez, com a mensagem pronta e o WhatsApp a um clique.</p></div>`;
   }
   const falta = c.paraBuscar.length;
-  const min = Math.max(1, Math.round(falta * 4 / 60));
+  const alvo = c.buscaveis.length;
+  const min = Math.max(1, Math.round(alvo * 4 / 60));
+  const motoristasTxt = `${c.marcados} de ${c.rank.length} motorista${c.rank.length > 1 ? "s" : ""} marcado${c.marcados !== 1 ? "s" : ""}`;
   let busca_ui;
   if (busca.rodando) {
     const pct = busca.total ? Math.round(busca.feitos / busca.total * 100) : 0;
@@ -191,19 +195,28 @@ function telaResumo(c) {
       <div class="prog"><i style="width:${pct}%"></i></div>
       <p>${busca.feitos} de ${busca.total} <span class="mut">· não troque de aba nem feche o JMS</span></p>
       <button class="btn sec" data-a="parar">Parar</button>`;
-  } else if (falta) {
+  } else if (alvo) {
     busca_ui = `<h2>Buscar telefones no JMS</h2>
-      <p class="mut">${falta} cliente${falta > 1 ? "s" : ""} sem telefone ainda. Leva cerca de ${min} min. Uso o JMS que você já tem aberto.</p>
-      <button class="btn" data-a="buscar">🔎 Buscar telefones (${falta})</button>
+      <p class="mut">${motoristasTxt}: ${alvo} cliente${alvo > 1 ? "s" : ""} para buscar (cerca de ${min} min). Uso o JMS que você já tem aberto.</p>
+      <button class="btn" data-a="buscar">🔎 Buscar telefones (${alvo})</button>
       ${c.ok.length ? `<div class="gap"></div><button class="btn sec" data-a="ir-atender">Já atender os ${c.fila.length} que tenho</button>` : ""}`;
+  } else if (!c.marcados) {
+    busca_ui = `<h2>Marque os motoristas</h2>
+      <p class="mut">Marque abaixo os motoristas cujos clientes você quer consultar.</p>
+      ${c.ok.length ? `<button class="btn sec" data-a="ir-atender">Atender os ${c.fila.length} que tenho</button>` : ""}`;
   } else {
-    busca_ui = `<h2>✓ Telefones prontos</h2>
-      <p class="mut">${c.ok.length} com telefone${c.sem.length ? `, ${c.sem.length} sem número` : ""}.</p>
+    busca_ui = `<h2>✓ ${falta ? "Motoristas marcados prontos" : "Telefones prontos"}</h2>
+      <p class="mut">${c.ok.length} com telefone${c.sem.length ? `, ${c.sem.length} sem número` : ""}.${falta ? ` Ainda faltam ${falta} de outros motoristas: marque-os abaixo para buscar.` : ""}</p>
       <button class="btn wa" data-a="ir-atender">Começar atendimento →</button>`;
   }
   const max = Math.max(1, ...c.rank.map((r) => r.qtd));
-  const linhaRank = (r) => `<tr><td class="pos">${r.pos}</td><td>${esc(r.motorista)}<div class="bar"><i style="width:${r.qtd / max * 100}%"></i></div></td>
-      <td style="text-align:right;white-space:nowrap"><b>${r.qtd}</b> <span class="mut">${r.pct}%</span></td></tr>`;
+  const faltaDe = (m) => c.paraBuscar.filter((l) => l.motorista === m).length;
+  const linhaRank = (r) => {
+    const f = faltaDe(r.motorista);
+    return `<label class="mrow"><input type="checkbox" data-m="${esc(r.motorista)}" ${estado.desmarcados[r.motorista] ? "" : "checked"} ${busca.rodando ? "disabled" : ""} />
+      <span class="mnome">${r.pos}. ${esc(r.motorista)}<span class="bar"><i style="width:${r.qtd / max * 100}%"></i></span></span>
+      <span class="mnum"><b>${r.qtd}</b> <span class="mut">${r.pct}%</span>${f ? `<br><span class="mut">${f} sem tel.</span>` : `<br><span class="ok">✓ prontos</span>`}</span></label>`;
+  };
   return `${busca.erro ? `<div class="erro">${esc(busca.erro)}</div>` : ""}
     <div class="grid">
       <div class="stat"><b>${c.linhas.length}</b><span>endereço incorreto</span></div>
@@ -211,11 +224,11 @@ function telaResumo(c) {
       <div class="stat"><b>${falta}</b><span>falta buscar</span></div>
       <div class="stat"><b class="${c.sem.length ? "er" : ""}">${c.sem.length}</b><span>sem número</span></div>
     </div>
-    <div class="card">${busca_ui}</div>
-    <div class="card"><h3>Maiores ofensores</h3>
-      <table class="rank">${c.rank.slice(0, 3).map(linhaRank).join("")}</table>
-      ${c.rank.length > 3 ? `<details><summary>Ver todos os ${c.rank.length} motoristas</summary><table class="rank">${c.rank.slice(3).map(linhaRank).join("")}</table></details>` : ""}
-      <p class="mut" style="margin-top:8px;font-size:12px">% = parte dos pacotes do motorista que teve endereço incorreto.</p>
+    <div class="card busca">${busca_ui}</div>
+    <div class="card"><div class="cab"><h3>Motoristas</h3>
+        <span><button class="link" data-a="marcar-todos" ${busca.rodando ? "disabled" : ""}>Todos</button> · <button class="link" data-a="marcar-nenhum" ${busca.rodando ? "disabled" : ""}>Nenhum</button></span></div>
+      ${c.rank.map(linhaRank).join("")}
+      <p class="mut" style="margin-top:8px;font-size:12px">% = parte dos pacotes do motorista que teve endereço incorreto. Só os motoristas marcados são consultados.</p>
     </div>
     <div class="mut" style="font-size:12px;text-align:center">${esc(estado.arquivo)}</div>`;
 }
@@ -308,7 +321,7 @@ function esperaCarregar(id) {
 async function buscarTelefones() {
   busca = { rodando: false, parar: false, feitos: 0, total: 0, erro: "" };
   const c = contexto();
-  const lista = c.paraBuscar.map((l) => l.codigo);
+  const lista = c.buscaveis.map((l) => l.codigo);
   if (!lista.length) return;
   try {
     const tab = await acharAbaJms();
@@ -400,6 +413,8 @@ $("tela").onclick = async (e) => {
       estado.atual = c.fila.length > 1 ? c.fila[(i + 1) % c.fila.length].codigo : null;
       abriuWhats = false;
       break;
+    case "marcar-todos": estado.desmarcados = {}; break;
+    case "marcar-nenhum": estado.desmarcados = Object.fromEntries(c.rank.map((r) => [r.motorista, true])); break;
     case "excel": exportarExcel(); return;
     case "modelo-padrao": estado.modelo = MODELO_PADRAO; break;
     case "limpar":
@@ -410,6 +425,12 @@ $("tela").onclick = async (e) => {
 };
 
 $("tela").onchange = async (e) => {
+  if (e.target.dataset.m !== undefined) {
+    const m = e.target.dataset.m;
+    if (e.target.checked) delete estado.desmarcados[m]; else estado.desmarcados[m] = true;
+    salvar(); render();
+    return;
+  }
   if (e.target.id !== "arquivo") return;
   const f = e.target.files[0];
   if (!f) return;

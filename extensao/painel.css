@@ -57,3 +57,12 @@ code{background:var(--bg);padding:1px 5px;border-radius:4px;font-size:12px}
 .toast{position:fixed;bottom:64px;left:50%;transform:translateX(-50%);background:#101828;color:#fff;padding:8px 16px;border-radius:8px;opacity:0;transition:opacity .2s;pointer-events:none;z-index:9;white-space:nowrap}
 .toast.show{opacity:1}
 details summary{cursor:pointer;color:var(--ac);padding:4px 0}
+.busca{position:sticky;top:-14px;z-index:5;box-shadow:0 4px 10px rgba(0,0,0,.08)}
+.cab{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px}.cab h3{margin:0}
+.link{background:none;border:0;color:var(--ac);font:inherit;cursor:pointer;padding:2px}
+.link:disabled{opacity:.4;cursor:not-allowed}
+.mrow{display:flex;gap:10px;align-items:center;padding:9px 2px;border-bottom:1px solid var(--bd);cursor:pointer}
+.mrow:last-of-type{border-bottom:0}
+.mrow input{width:20px;height:20px;flex:none;accent-color:var(--ac)}
+.mnome{flex:1;min-width:0}.mnome .bar{display:block}
+.mnum{text-align:right;white-space:nowrap;font-size:13px;line-height:1.3}
