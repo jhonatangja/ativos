@@ -3,79 +3,58 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Ativo · Endereço incorreto</title>
-<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📞</text></svg>" />
-<link rel="stylesheet" href="styles.css" />
+<title>Ativo JMS · Instalar</title>
+<link rel="icon" href="extensao/icons/48.png" />
+<style>
+:root{--bg:#f4f6fa;--card:#fff;--tx:#1c2430;--mut:#667085;--bd:#e4e7ec;--ac:#2563eb;--ac2:#1d4ed8}
+@media(prefers-color-scheme:dark){:root{--bg:#12161c;--card:#1b212a;--tx:#e8ecf1;--mut:#98a2b3;--bd:#2c3542;--ac:#5b8def;--ac2:#7aa2f7}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font:16px/1.55 system-ui,sans-serif}
+main{max-width:640px;margin:0 auto;padding:24px 16px 48px}
+h1{font-size:28px;margin:0 0 4px}h2{font-size:18px;margin:0 0 10px}
+.mut{color:var(--mut)}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:14px;padding:18px;margin:16px 0}
+.btn{display:block;text-align:center;background:var(--ac);color:#fff;text-decoration:none;font-weight:700;padding:14px;border-radius:10px}
+.btn:hover{background:var(--ac2)}
+ol{padding-left:22px;margin:0}li{margin-bottom:10px}
+code{background:var(--bg);padding:2px 6px;border-radius:5px;font-size:14px;user-select:all}
+.hero{display:flex;gap:14px;align-items:center;margin-bottom:8px}.hero img{width:56px;height:56px;border-radius:14px}
+a{color:var(--ac)}
+</style>
 </head>
 <body>
 <main>
-  <header class="top">
-    <div>
-      <span class="eyebrow">Operação · Ativo</span>
-      <h1>Endereço incorreto <span class="accent">por motorista</span></h1>
-    </div>
-    <button class="btn ghost danger" id="btnReset" hidden>Limpar tudo</button>
-  </header>
+  <div class="hero"><img src="extensao/icons/128.png" alt="" /><div><h1>Ativo JMS</h1><div class="mut">Endereço incorreto por motorista, com telefone do cliente e atendimento guiado.</div></div></div>
 
-  <section class="card" id="step1">
-    <h2><span class="n">1</span> Importar planilha</h2>
-    <p class="mut">Exportação do JMS (xlsx ou csv). O arquivo é lido só neste computador, nada é enviado para a internet.</p>
-    <input type="file" id="file" accept=".xlsx,.xls,.csv" />
-    <div id="fileInfo" class="mut"></div>
-  </section>
+  <div class="card">
+    <h2>1. Baixe a extensão</h2>
+    <a class="btn" href="ativo-jms-extensao.zip" download>⬇ Baixar Ativo JMS (.zip)</a>
+    <p class="mut" style="margin:10px 0 0">Depois de baixar, clique com o botão direito no arquivo → <b>Extrair tudo</b>. Guarde a pasta extraída num lugar fixo (ex.: Documentos), ela não pode ser apagada.</p>
+  </div>
 
-  <section id="painel" hidden>
-    <div class="stats" id="stats"></div>
+  <div class="card">
+    <h2>2. Instale no Chrome (1 minuto, uma vez por computador)</h2>
+    <ol>
+      <li>No Chrome, digite na barra de endereço: <code>chrome://extensions</code> e aperte Enter.</li>
+      <li>Ligue <b>Modo do desenvolvedor</b> (canto superior direito).</li>
+      <li>Clique em <b>Carregar sem compactação</b> e escolha a pasta <b>ativo-jms</b> que você extraiu.</li>
+      <li>Clique no ícone de peça de quebra-cabeça 🧩 do Chrome e no <b>alfinete</b> ao lado de "Ativo JMS" para deixá-lo sempre visível.</li>
+    </ol>
+  </div>
 
-    <section class="card">
-      <h2>Ranking de ofensores</h2>
-      <table id="rank"></table>
-    </section>
+  <div class="card">
+    <h2>3. Usar</h2>
+    <ol>
+      <li>Abra o JMS e faça o login.</li>
+      <li>Clique no ícone <b>Ativo JMS</b>: abre um painel ao lado.</li>
+      <li>Escolha a planilha exportada do JMS.</li>
+      <li>Clique em <b>Buscar telefones</b> e espere (o JMS fica aberto na tela).</li>
+      <li>Vá para <b>Atender</b>: um cliente por vez, com mensagem pronta e botão de WhatsApp.</li>
+    </ol>
+  </div>
 
-    <section class="card">
-      <h2><span class="n">2</span> Buscar telefones no JMS</h2>
-      <ol class="steps">
-        <li><b>Uma vez por computador:</b> arraste este botão para a barra de favoritos do Chrome →
-          <a id="bookmarklet" class="bm" href="#">📞 Ativo JMS</a>
-          <span class="mut">(se a barra estiver oculta: Ctrl+Shift+B)</span></li>
-        <li><button class="btn" id="btnCopiar">Copiar códigos pendentes (<span id="qtdPend">0</span>)</button></li>
-        <li>No JMS, abra <b>Operação → Rastreamento do pacote</b> e clique no favorito <b>Ativo JMS</b>. Cole os códigos e clique <b>Iniciar</b>.</li>
-        <li>Ao terminar, clique <b>Copiar resultado</b> e cole aqui:
-          <textarea id="colar" placeholder="Cole aqui o resultado copiado do JMS"></textarea>
-          <button class="btn" id="btnImportar">Importar resultado</button>
-          <span id="importInfo" class="mut"></span></li>
-      </ol>
-    </section>
-
-    <section class="card">
-      <h2><span class="n">3</span> Mensagem padrão</h2>
-      <p class="mut">Variáveis: <code>{primeiro_nome}</code> <code>{codigo}</code> <code>{endereco}</code> <code>{bairro}</code> <code>{cidade}</code></p>
-      <textarea id="modelo" rows="4"></textarea>
-    </section>
-
-    <section class="card">
-      <div class="bar">
-        <h2><span class="n">4</span> Lista por motorista</h2>
-        <div class="actions">
-          <input id="q" placeholder="Filtrar: código, cliente, telefone, motorista…" />
-          <select id="fStatus">
-            <option value="">Todos</option>
-            <option value="ok">Com telefone</option>
-            <option value="sem">Sem telefone / erro</option>
-            <option value="pend">Não consultados</option>
-            <option value="aviso">Verificar telefone</option>
-            <option value="feito">Já enviados</option>
-          </select>
-          <button class="btn" id="btnExcel">Exportar Excel</button>
-        </div>
-      </div>
-      <div id="lista"></div>
-    </section>
-  </section>
+  <p class="mut">A planilha e os telefones ficam só neste computador, dentro do Chrome. Nada é enviado para a internet.<br>
+  Precisa de outra forma? Existe a <a href="manual/">versão manual com favorito</a>.</p>
 </main>
-<div id="toast" class="toast"></div>
-<script src="vendor/xlsx.full.min.js"></script>
-<script src="bookmarklet.js"></script>
-<script src="app.js"></script>
 </body>
 </html>
