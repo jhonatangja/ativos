@@ -33,13 +33,15 @@ function origemInfo(raw) {
   return o ? { nome: o[1], de: o[2] } : null;
 }
 
-const RETORNOS = {
-  enviado: "Enviado",
-  respondeu: "Respondeu",
-  "sem-resposta": "Não respondeu",
-  "nao-ligou": "Diz que o motorista não ligou",
+// Retorno de cada cliente. As chaves são as mesmas nos dois modos; só o texto muda.
+const RETORNOS_POR_MODO = {
+  endereco: { enviado: "Enviado", respondeu: "Respondeu", "sem-resposta": "Não respondeu", "nao-ligou": "Diz que o motorista não ligou" },
+  confirmacao: { enviado: "Enviado", respondeu: "Confirmou que recebeu", "sem-resposta": "Não respondeu", "nao-ligou": "Disse que NÃO recebeu" },
 };
-const retornoDe = (codigo) => { const v = estado.feitos[codigo]; return v ? (RETORNOS[v] ? v : "enviado") : ""; };
+const retornos = () => RETORNOS_POR_MODO[modo];
+const retornoDe = (codigo) => { const v = estado.feitos[codigo]; return v ? (retornos()[v] ? v : "enviado") : ""; };
+
+const GRUPO_CONF = "Confirmações de entrega"; // no modo "confirmar entrega" não há motorista: tudo fica num grupo só
 
 const MODELO_ANTIGO =
   "Olá {primeiro_nome}, tudo bem? Aqui é da entrega do seu pedido (código {codigo}). " +
@@ -52,8 +54,17 @@ const MODELO_PADRAO =
   "Pode nos enviar o endereço correto, com rua, número e ponto de referência? " +
   "Assim reagendamos a entrega. Obrigado!";
 
-const novoEstado = () => ({ pacotes: [], totais: {}, res: {}, feitos: {}, desmarcados: {}, filtroMot: "", modelo: MODELO_PADRAO, arquivo: "", atual: null });
-let estado = novoEstado();
+const MODELO_CONFIRMACAO =
+  "Olá {primeiro_nome}, tudo bem? Aqui é da entrega do seu pedido {de_origem} (código {codigo}). " +
+  "Só estamos confirmando: você já recebeu o produto? Se ainda não chegou, nos avise por aqui. Obrigado!";
+const modeloPadrao = (m = modo) => (m === "confirmacao" ? MODELO_CONFIRMACAO : MODELO_PADRAO);
+
+// Dois "trabalhos" independentes: o de endereço incorreto (planilha) e o de confirmação de entrega (códigos colados).
+const novoEstado = (m = "endereco") => ({ pacotes: [], totais: {}, res: {}, feitos: {}, desmarcados: {}, filtroMot: "", modelo: modeloPadrao(m), arquivo: "", atual: null });
+let modo = "endereco";
+let estados = { endereco: novoEstado("endereco"), confirmacao: novoEstado("confirmacao") };
+let estado = estados.endereco; // estado do modo atual
+let config = { whats: "web" }; // "web" = abre direto o chat no WhatsApp Web; "wame" = link wa.me (app do computador)
 let aba = "resumo";
 let busca = { rodando: false, parar: false, feitos: 0, total: 0, erro: "" };
 let abriuWhats = false;
@@ -80,7 +91,10 @@ const store = {
   },
 };
 let salvarT;
-function salvar() { clearTimeout(salvarT); salvarT = setTimeout(() => store.gravar(estado), 150); }
+function salvar() {
+  clearTimeout(salvarT);
+  salvarT = setTimeout(() => { estados[modo] = estado; store.gravar({ v: 2, modo, estados, config }); }, 150);
+}
 
 function toast(msg) {
   const t = $("toast");
@@ -111,7 +125,9 @@ function telBonito(bruto) {
 }
 function linkWhats(bruto, texto) {
   const d = telNacional(bruto);
-  return d.length === 10 || d.length === 11 ? `https://wa.me/55${d}?text=${encodeURIComponent(texto)}` : "";
+  if (d.length !== 10 && d.length !== 11) return "";
+  const base = config.whats === "wame" ? "https://wa.me/55" + d + "?text=" : "https://web.whatsapp.com/send?phone=55" + d + "&text=";
+  return base + encodeURIComponent(texto);
 }
 
 /* ---------- planilha ---------- */
@@ -146,6 +162,18 @@ async function lerArquivo(file) {
   salvar();
 }
 
+// Modo "confirmar entrega": só os códigos, colados. Nome, telefone e origem vêm da consulta ao JMS.
+function carregarCodigos(texto) {
+  const codigos = [...new Set(String(texto).match(/\d{10,}/g) || [])];
+  if (!codigos.length) throw new Error("Não achei nenhum código. Cole os números dos pedidos (um por linha, ou separados por espaço ou vírgula).");
+  const pacotes = codigos.map((codigo) => ({ codigo, motorista: GRUPO_CONF, cliente: "", endereco: "", bairro: "", cidade: "", cep: "", origem: "" }));
+  const set = new Set(codigos);
+  const manter = (o) => Object.fromEntries(Object.entries(o).filter(([k]) => set.has(k)));
+  estado = { ...estado, pacotes, totais: { [GRUPO_CONF]: pacotes.length }, res: manter(estado.res), feitos: manter(estado.feitos),
+    arquivo: `${codigos.length} código${codigos.length > 1 ? "s" : ""} colado${codigos.length > 1 ? "s" : ""}`, atual: null, desmarcados: {}, filtroMot: "" };
+  salvar();
+}
+
 /* ---------- dados derivados ---------- */
 function mensagem(p) {
   const pn = p.cliente.split(/\s+/)[0] || "";
@@ -153,17 +181,21 @@ function mensagem(p) {
   const v = { primeiro_nome: pn ? pn[0].toUpperCase() + pn.slice(1).toLowerCase() : "", codigo: p.codigo, endereco: p.endereco, bairro: p.bairro, cidade: p.cidade,
     origem: o ? o.nome : "", de_origem: o ? o.de : "" };
   // se a origem não for uma loja conhecida, some junto com o espaço que vinha antes dela
-  return estado.modelo.replace(/(\s?)\{(\w+)\}/g, (_, sp, k) => ((k === "origem" || k === "de_origem") && !v[k] ? "" : sp + (v[k] ?? "")));
+  return estado.modelo
+    .replace(/(\s?)\{(\w+)\}/g, (_, sp, k) => ((k === "origem" || k === "de_origem") && !v[k] ? "" : sp + (v[k] ?? "")))
+    .replace(/[ \t]+([,.!?;:])/g, "$1"); // sem nome: "Olá , tudo bem?" vira "Olá, tudo bem?"
 }
 
 function derivar() {
   const donos = {};
   for (const p of estado.pacotes) {
     const r = estado.res[p.codigo];
-    if (r && r.s === "ok") (donos[telNacional(r.t)] = donos[telNacional(r.t)] || new Set()).add(norm(p.cliente));
+    if (r && r.s === "ok") (donos[telNacional(r.t)] = donos[telNacional(r.t)] || new Set()).add(norm(p.cliente || r.n));
   }
-  return estado.pacotes.map((p) => {
-    const r = estado.res[p.codigo];
+  return estado.pacotes.map((p0) => {
+    const r = estado.res[p0.codigo];
+    // dados que a planilha não tem (modo confirmação) vêm do JMS
+    const p = { ...p0, cliente: p0.cliente || (r && r.n) || "", origem: p0.origem || (r && r.o) || "" };
     let status = "pend", aviso = "", motivoErro = "";
     const d = r && r.s === "ok" ? telNacional(r.t) : "";
     if (r && r.s === "ok") {
@@ -223,6 +255,7 @@ function retornoPorMotorista(c) {
 function render() {
   const c = contexto();
   document.querySelectorAll("#abas button").forEach((b) => b.classList.toggle("on", b.dataset.aba === aba));
+  document.querySelectorAll("#modos button").forEach((b) => b.classList.toggle("on", b.dataset.modo === modo));
   const bg = $("badgeFila");
   bg.hidden = !c.filaTodos.length; bg.textContent = c.filaTodos.length;
   $("tela").innerHTML = aba === "resumo" ? telaResumo(c) : aba === "atender" ? telaAtender(c) : aba === "retorno" ? telaRetorno(c) : telaMais(c);
@@ -233,7 +266,21 @@ function blocoUpload(titulo, sub) {
     <input type="file" id="arquivo" accept=".xlsx,.xls,.csv" /></label><div id="erroArquivo"></div>`;
 }
 
+function blocoColar(titulo, botao) {
+  return `<textarea id="codigos" class="colar" placeholder="Cole aqui os códigos dos pedidos, um por linha"></textarea>
+    <div id="erroCodigos"></div><button class="btn" data-a="carregar-codigos">${botao}</button>`;
+}
+
 function telaResumo(c) {
+  const conf = modo === "confirmacao";
+  if (!estado.pacotes.length && conf) {
+    return `<div class="card"><h2>Confirmar entrega</h2>
+      <p class="mut">Cole os códigos dos pedidos. O programa busca o telefone de cada cliente no JMS e você manda a pergunta "já recebeu o produto?".</p>
+      ${blocoColar("", "Carregar códigos")}</div>
+      <div class="card"><h3>Como funciona</h3>
+      <p>1. Você cola os códigos.</p><p>2. O programa busca nome, telefone e a origem (Shein, Mercado Livre…) no JMS.</p>
+      <p>3. Você atende um por vez: abre o WhatsApp com a mensagem pronta e aperta Enter.</p></div>`;
+  }
   if (!estado.pacotes.length) {
     return `<div class="card"><h2>Comece por aqui</h2>
       <p class="mut">Escolha a planilha que você exporta do JMS. Ela é lida só neste computador.</p>
@@ -255,7 +302,7 @@ function telaResumo(c) {
       <button class="btn sec" data-a="parar">Parar</button>`;
   } else if (alvo) {
     busca_ui = `<h2>Buscar telefones no JMS</h2>
-      <p class="mut">${motoristasTxt}: ${alvo} cliente${alvo > 1 ? "s" : ""} para buscar (cerca de ${min} min). Uso o JMS que você já tem aberto.</p>
+      <p class="mut">${conf ? "" : motoristasTxt + ": "}${alvo} cliente${alvo > 1 ? "s" : ""} para buscar (cerca de ${min} min). Uso o JMS que você já tem aberto.</p>
       <button class="btn" data-a="buscar">🔎 Buscar telefones (${alvo})</button>
       ${c.ok.length ? `<div class="gap"></div><button class="btn sec" data-a="ir-atender">Já atender os ${c.fila.length} que tenho</button>` : ""}`;
   } else if (!c.marcados) {
@@ -275,14 +322,26 @@ function telaResumo(c) {
       <span class="mnome">${r.pos}. ${esc(r.motorista)}<span class="bar"><i style="width:${r.qtd / max * 100}%"></i></span></span>
       <span class="mnum"><b>${r.qtd}</b> <span class="mut">${r.pct}%</span>${f ? `<br><span class="mut">${f} sem tel.</span>` : `<br><span class="ok">✓ prontos</span>`}</span></label>`;
   };
-  return `${busca.erro ? `<div class="erro">${esc(busca.erro)}</div>` : ""}
+  const grade = `${busca.erro ? `<div class="erro">${esc(busca.erro)}</div>` : ""}
     <div class="grid">
-      <div class="stat"><b>${c.linhas.length}</b><span>endereço incorreto</span></div>
+      <div class="stat"><b>${c.linhas.length}</b><span>${conf ? "códigos" : "endereço incorreto"}</span></div>
       <div class="stat"><b class="ok">${c.ok.length}</b><span>com telefone</span></div>
       <div class="stat"><b>${falta}</b><span>falta buscar</span></div>
       <div class="stat"><b class="${c.sem.length ? "er" : ""}">${c.sem.length}</b><span>sem número</span></div>
     </div>
-    <div class="card busca">${busca_ui}</div>
+    <div class="card busca">${busca_ui}</div>`;
+  if (conf) {
+    const porOrigem = {};
+    for (const l of c.linhas) { const k = l.origemNome || l.origem; if (k) porOrigem[k] = (porOrigem[k] || 0) + 1; }
+    const origens = Object.entries(porOrigem).sort((a, b) => b[1] - a[1]);
+    return `${grade}
+      ${origens.length ? `<div class="card"><h3>Origem dos pedidos</h3>${origens.map(([k, n]) => `<div class="item"><b>${esc(k)}</b> <span class="mut">· ${n}</span></div>`).join("")}</div>` : ""}
+      <div class="card"><h3>Trocar os códigos</h3>
+        <p class="mut" style="font-size:12px">Os telefones já buscados dos códigos que se repetem são mantidos.</p>
+        ${blocoColar("", "Carregar estes códigos")}</div>
+      <div class="mut" style="font-size:12px;text-align:center">${esc(estado.arquivo)}</div>`;
+  }
+  return `${grade}
     <div class="card"><div class="cab"><h3>Motoristas</h3>
         <span><button class="link" data-a="marcar-todos" ${busca.rodando ? "disabled" : ""}>Todos</button> · <button class="link" data-a="marcar-nenhum" ${busca.rodando ? "disabled" : ""}>Nenhum</button></span></div>
       ${c.rank.map(linhaRank).join("")}
@@ -295,7 +354,7 @@ function telaAtender(c) {
   if (!estado.pacotes.length) return `<div class="vazio"><div class="g">📄</div><p>Escolha a planilha primeiro.</p><button class="btn" data-a="ir-resumo">Ir para o Resumo</button></div>`;
   if (!c.ok.length) return `<div class="vazio"><div class="g">🔎</div><p><b>Ainda não tem telefone para atender.</b></p><p class="mut">Busque os telefones no Resumo.</p><button class="btn" data-a="ir-resumo">Ir para o Resumo</button></div>`;
   const feitos = c.okFiltro.length - c.fila.length;
-  const seletor = seletorMotorista(c);
+  const seletor = modo === "endereco" ? seletorMotorista(c) : "";
   if (!c.fila.length) {
     if (estado.filtroMot) {
       return `${seletor}<div class="vazio"><div class="g">✅</div><p><b>Terminei este motorista.</b></p>
@@ -322,11 +381,11 @@ function telaAtender(c) {
       <span>Cliente ${i + 1} de ${c.fila.length} · ${feitos} enviados</span>
       <button data-a="pular" ${c.fila.length < 2 ? "disabled" : ""}>Pular →</button></div>
     <div class="card">
-      <span class="pill">Motorista #${r.pos}: ${esc(p.motorista)}</span>
+      ${modo === "endereco" ? `<span class="pill">Motorista #${r.pos}: ${esc(p.motorista)}</span>` : `<span class="pill">Pedido ${esc(p.codigo)}</span>`}
       ${p.origem ? `<span class="pill ${p.origemNome ? "loja" : ""}">🛒 ${esc(p.origemNome || p.origem)}</span>` : ""}
-      <div class="cli">${esc(p.cliente)}</div>
+      <div class="cli">${esc(p.cliente || "(sem nome)")}</div>
       <div class="tel">${esc(p.tel)}</div>
-      <div class="end">${esc(p.endereco)}<br><span class="mut">${esc(p.bairro)} · ${esc(p.cidade)} · CEP ${esc(p.cep)}</span></div>
+      ${modo === "endereco" ? `<div class="end">${esc(p.endereco)}<br><span class="mut">${esc(p.bairro)} · ${esc(p.cidade)} · CEP ${esc(p.cep)}</span></div>` : ""}
       ${p.aviso ? `<div class="aviso">⚠ ${esc(p.aviso)}</div>` : ""}
       <div class="msg">${esc(p.mensagem)}</div>
       <button class="btn wa" data-a="whats" ${p.whats ? "" : "disabled"}>💬 Abrir WhatsApp com a mensagem</button>
@@ -350,39 +409,48 @@ function seletorMotorista(c) {
 
 const abertos = {}; // motoristas expandidos na aba Retorno
 function telaRetorno(c) {
-  if (!estado.pacotes.length) return `<div class="vazio"><div class="g">📄</div><p>Escolha a planilha primeiro.</p><button class="btn" data-a="ir-resumo">Ir para o Resumo</button></div>`;
+  const conf = modo === "confirmacao";
+  if (!estado.pacotes.length) return `<div class="vazio"><div class="g">📄</div><p>${conf ? "Cole os códigos primeiro." : "Escolha a planilha primeiro."}</p><button class="btn" data-a="ir-resumo">Ir para o Resumo</button></div>`;
   const rs = retornoPorMotorista(c);
   const cont = (k) => c.linhas.filter((l) => l.retorno === k).length;
   const contatados = c.linhas.filter((l) => l.retorno).length;
+  // textos: no modo endereço o que importa é "o motorista ligou?"; na confirmação, "o cliente recebeu?"
+  const T = conf
+    ? { intro: "Depois de enviar as mensagens, volte aqui e marque o que cada cliente respondeu: se recebeu o produto ou não.",
+        resp: "confirmaram", respChip: "recebeu", nao: "disseram que NÃO receberam", naoChip: "não recebeu",
+        bResp: "✅ Recebeu", bNao: "📭 Não recebeu", dica: 'Quem disse que "não recebeu" aparece marcado com 🚩 para você tratar.', fila: "Atender os" }
+    : { intro: "Depois de enviar as mensagens, volte aqui e marque como cada cliente respondeu. Assim você enxerga quais motoristas têm clientes que não respondem ou que dizem que o motorista nunca ligou.",
+        resp: "responderam", respChip: "respondeu", nao: "dizem que o motorista não ligou", naoChip: "diz que não ligou",
+        bResp: "✅ Respondeu", bNao: "🚫 Não ligou", dica: 'Motoristas com mais clientes que "não ligou" e "sem resposta" aparecem primeiro: são os que merecem cobrança sobre o ativo.', fila: "Atender os" };
   if (!contatados) {
     return `<div class="card"><h2>Retorno dos clientes</h2>
-      <p class="mut">Depois de enviar as mensagens, volte aqui e marque como cada cliente respondeu. Assim você enxerga quais motoristas têm clientes que não respondem ou que dizem que o motorista nunca ligou.</p>
+      <p class="mut">${T.intro}</p>
       <button class="btn" data-a="ir-atender">Ir para o atendimento</button></div>`;
   }
   const chips = (r) => [
-    r.respondeu ? `<span class="ok">✅ ${r.respondeu} respondeu</span>` : "",
+    r.respondeu ? `<span class="ok">✅ ${r.respondeu} ${T.respChip}</span>` : "",
     r.semResposta ? `<span class="warn">⏳ ${r.semResposta} sem resposta</span>` : "",
-    r.naoLigou ? `<span class="er">🚫 ${r.naoLigou} diz que não ligou</span>` : "",
+    r.naoLigou ? `<span class="er">🚫 ${r.naoLigou} ${T.naoChip}</span>` : "",
     r.soEnviado ? `<span class="mut">📤 ${r.soEnviado} aguardando</span>` : "",
     r.naFila ? `<span class="mut">🕐 ${r.naFila} na fila</span>` : "",
   ].filter(Boolean).join(" · ");
   const acao = (l, v, rot) => `<button class="mini ${l.retorno === v ? "sel" : ""}" data-a="ret" data-c="${esc(l.codigo)}" data-v="${v}">${rot}</button>`;
   return `<div class="grid">
       <div class="stat"><b>${contatados}</b><span>contatados</span></div>
-      <div class="stat"><b class="ok">${cont("respondeu")}</b><span>responderam</span></div>
+      <div class="stat"><b class="ok">${cont("respondeu")}</b><span>${T.resp}</span></div>
       <div class="stat"><b class="warn">${cont("sem-resposta")}</b><span>não responderam</span></div>
-      <div class="stat"><b class="er">${cont("nao-ligou")}</b><span>dizem que o motorista não ligou</span></div>
+      <div class="stat"><b class="er">${cont("nao-ligou")}</b><span>${T.nao}</span></div>
     </div>
-    <p class="mut" style="font-size:12px">Motoristas com mais clientes que "não ligou" e "sem resposta" aparecem primeiro: são os que merecem cobrança sobre o ativo.</p>
+    <p class="mut" style="font-size:12px">${T.dica}</p>
     ${rs.map((r) => {
       const feitos = r.clientes.filter((l) => l.retorno);
-      return `<details class="drv" data-d="${esc(r.motorista)}" ${abertos[r.motorista] ? "open" : ""}>
+      return `<details class="drv" data-d="${esc(r.motorista)}" ${abertos[r.motorista] || conf ? "open" : ""}>
         <summary><span>${r.naoLigou ? "🚩 " : ""}${esc(r.motorista)}</span><span class="mut">${r.contatados}/${r.total}</span></summary>
         <div class="drvbody"><div class="chips">${chips(r) || '<span class="mut">Ninguém contatado ainda</span>'}</div>
-          ${r.naFila ? `<button class="btn sec peq" data-a="atender-mot" data-m="${esc(r.motorista)}">Atender os ${r.naFila} da fila deste motorista</button>` : ""}
-          ${feitos.map((l) => `<div class="item"><b>${esc(l.cliente)}</b> <span class="mut">${esc(l.tel)}${l.origemNome ? " · " + esc(l.origemNome) : ""}</span><br>
-            <span class="tag">${esc(RETORNOS[l.retorno])}</span>
-            <div class="acoes">${acao(l, "respondeu", "✅ Respondeu")}${acao(l, "sem-resposta", "⏳ Sem resposta")}${acao(l, "nao-ligou", "🚫 Não ligou")}
+          ${r.naFila && !conf ? `<button class="btn sec peq" data-a="atender-mot" data-m="${esc(r.motorista)}">${T.fila} ${r.naFila} da fila deste motorista</button>` : ""}
+          ${feitos.map((l) => `<div class="item"><b>${esc(l.cliente || "(sem nome)")}</b> <span class="mut">${esc(l.tel)}${l.origemNome ? " · " + esc(l.origemNome) : ""}</span><br>
+            <span class="tag">${esc(retornos()[l.retorno])}</span>
+            <div class="acoes">${acao(l, "respondeu", T.bResp)}${acao(l, "sem-resposta", "⏳ Sem resposta")}${acao(l, "nao-ligou", T.bNao)}
               <button class="mini" data-a="rwhats" data-c="${esc(l.codigo)}">💬</button><button class="mini" data-a="ret" data-c="${esc(l.codigo)}" data-v="">↩ Fila</button></div></div>`).join("")}
         </div></details>`;
     }).join("")}`;
@@ -390,20 +458,26 @@ function telaRetorno(c) {
 
 function telaMais(c) {
   const lista = [...c.sem, ...c.linhas.filter((l) => l.status === "erro")];
+  const conf = modo === "confirmacao";
   return `<div class="card"><h3>Exportar</h3>
-      <button class="btn" data-a="excel" ${estado.pacotes.length ? "" : "disabled"}>📥 Baixar Excel (ranking + lista por motorista)</button></div>
-    <div class="card"><h3>Mensagem para o cliente</h3>
-      <p class="mut" style="font-size:12px">Variáveis: <code>{primeiro_nome}</code> <code>{codigo}</code> <code>{endereco}</code> <code>{bairro}</code> <code>{cidade}</code>
+      <button class="btn" data-a="excel" ${estado.pacotes.length ? "" : "disabled"}>📥 Baixar Excel ${conf ? "(lista e retorno)" : "(ranking + lista por motorista)"}</button></div>
+    <div class="card"><h3>Mensagem para o cliente${conf ? " (confirmação de entrega)" : ""}</h3>
+      <p class="mut" style="font-size:12px">Variáveis: <code>{primeiro_nome}</code> <code>{codigo}</code>${conf ? "" : " <code>{endereco}</code> <code>{bairro}</code> <code>{cidade}</code>"}
         <code>{de_origem}</code> (ex.: "do Mercado Livre", "da Shein") <code>{origem}</code> (ex.: "Mercado Livre"). Se a origem não for uma loja conhecida, some sozinha.</p>
       <textarea id="modelo">${esc(estado.modelo)}</textarea>
       <div class="gap"></div><button class="btn sec peq" data-a="modelo-padrao">Voltar ao texto padrão</button></div>
     <div class="card"><h3>Sem número / com erro (${lista.length})</h3>
       ${lista.length ? lista.map((l) => `<div class="item"><b>${esc(l.cliente)}</b> <span class="mut">· ${esc(l.motorista)}</span><br>
         <span class="mut">${esc(l.codigo)} — ${esc(l.motivoErro)}</span><br><button class="btn sec peq" style="display:inline-block;width:auto;margin-top:4px" data-a="cp-cod" data-c="${esc(l.codigo)}">Copiar código</button></div>`).join("") : '<p class="mut">Nenhum.</p>'}</div>
-    <div class="card"><h3>Planilha</h3>
-      ${estado.pacotes.length ? blocoUpload("Trocar planilha", "os telefones já buscados são mantidos") : "<p class=\"mut\">Nenhuma planilha carregada.</p>"}
-      <div class="gap"></div><button class="btn perigo peq" data-a="limpar">Apagar tudo e recomeçar</button></div>
-    <p class="mut" style="text-align:center;font-size:12px">Ativo JMS 1.0 · dados só neste computador</p>`;
+    <div class="card"><h3>Ao abrir o WhatsApp</h3>
+      <select id="cfgwhats" class="selmot" style="margin-bottom:0">
+        <option value="web" ${config.whats === "web" ? "selected" : ""}>Direto no WhatsApp Web (menos cliques)</option>
+        <option value="wame" ${config.whats === "wame" ? "selected" : ""}>Pelo link wa.me (para o app do WhatsApp no computador)</option></select>
+      <p class="mut" style="font-size:12px;margin-top:6px">A mensagem abre escrita; você só confere e aperta Enter. O envio é sempre seu: o programa não envia sozinho, para o seu número não ser bloqueado pelo WhatsApp.</p></div>
+    <div class="card"><h3>${conf ? "Códigos" : "Planilha"}</h3>
+      ${conf ? '<p class="mut">Para trocar os códigos, use o Resumo.</p>' : (estado.pacotes.length ? blocoUpload("Trocar planilha", "os telefones já buscados são mantidos") : "<p class=\"mut\">Nenhuma planilha carregada.</p>")}
+      <div class="gap"></div><button class="btn perigo peq" data-a="limpar">Apagar ${conf ? "estes códigos" : "a planilha"} e recomeçar</button></div>
+    <p class="mut" style="text-align:center;font-size:12px">Ativo JMS 1.1 · dados só neste computador</p>`;
 }
 
 /* ---------- WhatsApp ---------- */
@@ -478,10 +552,21 @@ async function buscarTelefones() {
 /* ---------- Excel ---------- */
 function exportarExcel() {
   const c = contexto();
+  const larg = (ws, w) => { ws["!cols"] = w.map((x) => ({ wch: x })); return ws; };
+  const hoje = new Date().toISOString().slice(0, 10).replaceAll("-", "");
+  const statusBusca = (l) => (l.status === "ok" ? "encontrado" : l.status === "pend" ? "não buscado" : "erro: " + l.motivoErro);
+  if (modo === "confirmacao") {
+    const wbc = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wbc, larg(XLSX.utils.aoa_to_sheet([["Código", "Cliente", "Origem", "Telefone", "Status da busca", "Aviso", "Retorno", "Mensagem", "Link WhatsApp"],
+      ...c.linhas.map((l) => [l.codigo, l.cliente, l.origemNome || l.origem, l.telCru, statusBusca(l), l.aviso, l.retorno ? retornos()[l.retorno] : "", l.mensagem, l.whats])]),
+      [18, 28, 16, 14, 28, 30, 28, 60, 40]), "Confirmação de entrega");
+    XLSX.writeFile(wbc, `confirmacao_entrega_${hoje}.xlsx`);
+    toast("Excel baixado");
+    return;
+  }
   const cab = ["Motorista", "Código", "Cliente", "Origem", "Telefone", "Endereço", "Bairro", "Cidade", "CEP", "Status da busca", "Aviso", "Retorno", "Mensagem", "Link WhatsApp"];
   const linha = (l) => [l.motorista, l.codigo, l.cliente, l.origemNome || l.origem, l.telCru, l.endereco, l.bairro, l.cidade, l.cep,
-    l.status === "ok" ? "encontrado" : l.status === "pend" ? "não buscado" : "erro: " + l.motivoErro, l.aviso, l.retorno ? RETORNOS[l.retorno] : "", l.mensagem, l.whats];
-  const larg = (ws, w) => { ws["!cols"] = w.map((x) => ({ wch: x })); return ws; };
+    statusBusca(l), l.aviso, l.retorno ? retornos()[l.retorno] : "", l.mensagem, l.whats];
   const W = [30, 18, 26, 16, 14, 40, 22, 16, 10, 28, 30, 26, 60, 40];
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, larg(XLSX.utils.aoa_to_sheet([["#", "Motorista", "Endereço incorreto", "Pacotes do motorista", "% dos pacotes"],
@@ -497,7 +582,7 @@ function exportarExcel() {
     usados.add(nome);
     XLSX.utils.book_append_sheet(wb, larg(XLSX.utils.aoa_to_sheet([cab, ...c.linhas.filter((l) => l.motorista === r.motorista).map(linha)]), W), nome);
   }
-  XLSX.writeFile(wb, `endereco_incorreto_${new Date().toISOString().slice(0, 10).replaceAll("-", "")}.xlsx`);
+  XLSX.writeFile(wb, `endereco_incorreto_${hoje}.xlsx`);
   toast("Excel baixado");
 }
 
@@ -542,11 +627,26 @@ $("tela").onclick = async (e) => {
     case "marcar-todos": estado.desmarcados = {}; break;
     case "marcar-nenhum": estado.desmarcados = Object.fromEntries(c.rank.map((r) => [r.motorista, true])); break;
     case "excel": exportarExcel(); return;
-    case "modelo-padrao": estado.modelo = MODELO_PADRAO; break;
+    case "modelo-padrao": estado.modelo = modeloPadrao(); break;
+    case "carregar-codigos": {
+      try { carregarCodigos($("codigos").value); busca.erro = ""; aba = "resumo"; toast("Códigos carregados"); }
+      catch (err) { const el = $("erroCodigos"); if (el) el.innerHTML = `<div class="erro">${esc(err.message)}</div>`; return; }
+      break;
+    }
     case "limpar":
-      if (!confirm("Apagar a planilha, os telefones e as marcações de enviado?")) return;
-      estado = { ...novoEstado(), modelo: estado.modelo }; aba = "resumo"; busca.erro = ""; break;
+      if (!confirm(modo === "confirmacao" ? "Apagar estes códigos, os telefones e as marcações?" : "Apagar a planilha, os telefones e as marcações de enviado?")) return;
+      estado = { ...novoEstado(modo), modelo: estado.modelo }; aba = "resumo"; busca.erro = ""; break;
   }
+  salvar(); render();
+};
+
+$("modos").onclick = (e) => {
+  const b = e.target.closest("button[data-modo]");
+  if (!b || b.dataset.modo === modo) return;
+  if (busca.rodando) { toast("Espere ou pare a busca antes de trocar"); return; }
+  estados[modo] = estado;
+  modo = b.dataset.modo; estado = estados[modo];
+  aba = "resumo"; abriuWhats = false; busca.erro = "";
   salvar(); render();
 };
 
@@ -556,6 +656,7 @@ $("tela").addEventListener("toggle", (e) => { // lembra quais motoristas estão 
 }, true);
 
 $("tela").onchange = async (e) => {
+  if (e.target.id === "cfgwhats") { config.whats = e.target.value; salvar(); render(); return; }
   if (e.target.id === "fmot") { estado.filtroMot = e.target.value; estado.atual = null; abriuWhats = false; salvar(); render(); return; }
   if (e.target.dataset.m !== undefined) {
     const m = e.target.dataset.m;
@@ -571,12 +672,19 @@ $("tela").onchange = async (e) => {
 };
 
 $("tela").oninput = (e) => {
-  if (e.target.id === "modelo") { estado.modelo = e.target.value || MODELO_PADRAO; salvar(); }
+  if (e.target.id === "modelo") { estado.modelo = e.target.value || modeloPadrao(); salvar(); }
 };
 
 (async () => {
   const s = await store.ler();
-  if (s && Array.isArray(s.pacotes)) estado = { ...novoEstado(), ...s };
-  if (estado.modelo === MODELO_ANTIGO) estado.modelo = MODELO_PADRAO; // quem nunca editou a mensagem ganha a versão com a origem
+  if (s && s.estados) { // formato atual: um estado por modo
+    modo = s.modo === "confirmacao" ? "confirmacao" : "endereco";
+    estados = { endereco: { ...novoEstado("endereco"), ...s.estados.endereco }, confirmacao: { ...novoEstado("confirmacao"), ...s.estados.confirmacao } };
+    config = { ...config, ...s.config };
+  } else if (s && Array.isArray(s.pacotes)) { // formato da versão anterior: era só o modo endereço
+    estados.endereco = { ...novoEstado("endereco"), ...s };
+  }
+  if (estados.endereco.modelo === MODELO_ANTIGO) estados.endereco.modelo = MODELO_PADRAO; // quem nunca editou a mensagem ganha a versão com a origem
+  estado = estados[modo];
   render();
 })();

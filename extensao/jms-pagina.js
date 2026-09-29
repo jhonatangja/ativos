@@ -78,5 +78,11 @@ async function jmsConsultarCodigo(code) {
   }
   var n = des.textContent.trim();
   if (!n || n.indexOf("*") >= 0) return { s: "erro", e: "telefone não abriu" };
-  return { s: "ok", t: n, n: valor(b, "Nome"), a: valor(b, "Endereço") };
+  // "Origem do Pedido" (Shein, Mercado Livre…) fica na seção "Informação básica"
+  var oc = Array.from(document.querySelectorAll(".item-msg")).find(function (i) {
+    var t = i.querySelector(".tt");
+    return t && t.textContent.trim() === "Origem do Pedido";
+  });
+  var orig = oc && oc.querySelector(".des") ? oc.querySelector(".des").textContent.trim() : "";
+  return { s: "ok", t: n, n: valor(b, "Nome"), a: valor(b, "Endereço"), o: orig };
 }

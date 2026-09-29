@@ -58,6 +58,10 @@ code{background:var(--bg);padding:1px 5px;border-radius:4px;font-size:12px}
 .toast.show{opacity:1}
 details summary{cursor:pointer;color:var(--ac);padding:4px 0}
 .warn{color:var(--warn)}
+.modos{display:flex;gap:4px;margin-top:8px;background:var(--bg);border-radius:10px;padding:3px}
+.modos button{flex:1;border:0;background:transparent;color:var(--mut);padding:8px 6px;border-radius:8px;font:inherit;font-size:13px;cursor:pointer}
+.modos button.on{background:var(--card);color:var(--ac);font-weight:600;box-shadow:0 1px 3px rgba(0,0,0,.12)}
+textarea.colar{min-height:140px;margin:6px 0;font:12px ui-monospace,monospace}
 .selmot{width:100%;padding:10px;margin-bottom:10px;border:1px solid var(--bd);border-radius:10px;background:var(--card);color:var(--tx);font:inherit}
 .pill.loja{background:#fff7ed;color:#c2410c;border-color:#fed7aa;font-weight:600}
 @media(prefers-color-scheme:dark){.pill.loja{background:#3a2412;color:#fdba74;border-color:#7c3a12}}
