@@ -57,6 +57,19 @@ code{background:var(--bg);padding:1px 5px;border-radius:4px;font-size:12px}
 .toast{position:fixed;bottom:64px;left:50%;transform:translateX(-50%);background:#101828;color:#fff;padding:8px 16px;border-radius:8px;opacity:0;transition:opacity .2s;pointer-events:none;z-index:9;white-space:nowrap}
 .toast.show{opacity:1}
 details summary{cursor:pointer;color:var(--ac);padding:4px 0}
+.warn{color:var(--warn)}
+.selmot{width:100%;padding:10px;margin-bottom:10px;border:1px solid var(--bd);border-radius:10px;background:var(--card);color:var(--tx);font:inherit}
+.pill.loja{background:#fff7ed;color:#c2410c;border-color:#fed7aa;font-weight:600}
+@media(prefers-color-scheme:dark){.pill.loja{background:#3a2412;color:#fdba74;border-color:#7c3a12}}
+details.drv{background:var(--card);border:1px solid var(--bd);border-radius:12px;margin-bottom:10px}
+details.drv>summary{cursor:pointer;padding:12px 14px;display:flex;justify-content:space-between;gap:8px;font-weight:600;color:var(--tx)}
+.drvbody{padding:0 14px 12px}
+.chips{display:flex;flex-wrap:wrap;gap:4px 10px;font-size:13px;margin-bottom:8px}
+.tag{display:inline-block;background:var(--bg);border:1px solid var(--bd);border-radius:6px;padding:0 7px;font-size:12px;margin:2px 0}
+.acoes{display:flex;flex-wrap:wrap;gap:4px;margin-top:4px}
+.mini{background:transparent;color:var(--ac);border:1px solid var(--bd);border-radius:6px;padding:4px 8px;cursor:pointer;font-size:12px;font-family:inherit}
+.mini.sel{background:var(--ac);color:#fff;border-color:var(--ac)}
+.abas button{font-size:13px}
 .busca{position:sticky;top:-14px;z-index:5;box-shadow:0 4px 10px rgba(0,0,0,.08)}
 .cab{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px}.cab h3{margin:0}
 .link{background:none;border:0;color:var(--ac);font:inherit;cursor:pointer;padding:2px}
